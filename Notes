@@ -1,0 +1,73 @@
+=================================================================================
+-------------------------------------PTHREAD-------------------------------------
+=================================================================================
+
+					-- PTHREAD_JOIN --
+
+DESCRIPTION:
+
+Specify a certain thread, the function halts until the thread terminates (if it is not already detached)
+
+int pthread_join(pthread_t thread, void **retval);
+
+thread:			The thread we will wait for to terminate
+retval			If not NULL, it will be filled with the exit status of the thread
+
+RETURN VALUE:
+
+succes: 0
+error: error_number
+
+					-- PTHREAD_CREATE --
+
+DESCRIPTION:
+
+Creates a new thread, it will start running the start_routine function
+
+int pthread_create(pthread_t *thread, const pthread_attr_t *attr, void *(*start_routine) (void *), void *arg);
+
+thread:			This will contain the thread ID of the newly created thread
+attr:			If NULL, default values are used, otherwise the given attributes are used to create the thread.
+start_routine:	The function the newly created thread will execute
+arg:			The only argument to the start_routine function
+
+RETURN VALUE:
+
+succes: 0
+error: error_number
+
+					-- PTHREAD_DETACH --
+
+DESCRIPTION:
+
+Specify a certain thread, the thread is then marked as detached
+this means it doesn't have to be joined for its resourcesto be released back to the system.
+
+int pthread_detach(pthread_t thread);
+
+thread:			The thread specified is marked as detached
+
+RETURN VALUE:
+
+succes: 0
+error: error_number
+
+=================================================================================
+--------------------------------PTHREAD_MUTEX------------------------------------
+=================================================================================
+
+					-- PTHREAD_MUTEX_INIT --
+
+DESCRIPTION:
+
+
+
+RETURN VALUE:
+
+
+=================================================================================
+--------------------------------SEMAPHORES---------------------------------------
+=================================================================================
+
+					-- SEM_OPEN --
+
