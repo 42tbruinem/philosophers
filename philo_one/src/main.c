@@ -6,7 +6,7 @@
 /*   By: tbruinem <tbruinem@student.codam.nl>         +#+                     */
 /*                                                   +#+                      */
 /*   Created: 2020/07/15 17:43:25 by tbruinem      #+#    #+#                 */
-/*   Updated: 2020/07/17 19:26:20 by tbruinem      ########   odam.nl         */
+/*   Updated: 2020/07/17 20:20:14 by tbruinem      ########   odam.nl         */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -60,7 +60,9 @@ void	putuint(unsigned int num)
 		num /= 10;
 		size--;
 	}
-	write(1, number, tmp + 1);
+	size = 0;
+	while (size != tmp + 1)
+		size += write(1, number + size, (tmp + 1) - size);
 }
 
 size_t	ft_strlen(char *str)
@@ -122,11 +124,17 @@ int		init_data(t_data *data, int eat_minimum, char **argv)
 
 void	message(t_phil *phil, char *msg)
 {
+	size_t	len;
+	size_t	i;
+
+	len = ft_strlen(msg);
 	pthread_mutex_lock(&phil->data->messenger);
 	putuint(time_msec() - phil->data->starttime);
 	write(1, " ", 1);
 	putuint(phil->id);
-	write(1, msg, ft_strlen(msg));
+	i = 0;
+	while (i < len)
+		i += write(1, msg + i, len - i);
 	pthread_mutex_unlock(&phil->data->messenger);
 }
 
