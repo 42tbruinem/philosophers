@@ -6,7 +6,7 @@
 /*   By: tbruinem <tbruinem@student.codam.nl>         +#+                     */
 /*                                                   +#+                      */
 /*   Created: 2020/07/15 17:43:25 by tbruinem      #+#    #+#                 */
-/*   Updated: 2020/07/17 20:20:14 by tbruinem      ########   odam.nl         */
+/*   Updated: 2020/07/17 20:27:47 by tbruinem      ########   odam.nl         */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -110,15 +110,24 @@ int		error(t_data *data, char *errmsg)
 
 int		init_data(t_data *data, int eat_minimum, char **argv)
 {
+	size_t	i;
+
+	i = 0;
 	data->phil_cnt = ft_atoi(argv[0]);
 	data->timer.die = ft_atoi(argv[1]);
 	data->timer.eat = ft_atoi(argv[2]);
 	data->timer.sleep = ft_atoi(argv[3]);
+	pthread_mutex_init(&data->messenger, NULL);
 	if (eat_minimum)
 		data->eat_minimum = ft_atoi(argv[4]);
 	data->forks = malloc(sizeof(pthread_mutex_t) * data->phil_cnt);
 	if (!data->forks)
 		return (1);
+	while (i < data->phil_cnt)
+	{
+		pthread_mutex_init(&data->forks[i], NULL);
+		i++;
+	}
 	return (0);
 }
 
