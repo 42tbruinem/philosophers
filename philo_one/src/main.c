@@ -6,7 +6,7 @@
 /*   By: tbruinem <tbruinem@student.codam.nl>         +#+                     */
 /*                                                   +#+                      */
 /*   Created: 2020/07/15 17:43:25 by tbruinem      #+#    #+#                 */
-/*   Updated: 2020/07/17 20:27:47 by tbruinem      ########   odam.nl         */
+/*   Updated: 2020/07/17 20:40:35 by tbruinem      ########   odam.nl         */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -25,17 +25,6 @@ unsigned int	time_msec(void)
 	gettimeofday(&time, NULL);
 	ret = (time.tv_sec * 1000);
 	ret += (time.tv_usec / 1000);
-	return (ret);
-}
-
-unsigned int	time_sec(void)
-{
-	struct timeval	time;
-	unsigned int	ret;
-
-	gettimeofday(&time, NULL);
-	ret = time.tv_sec;
-	ret += (time.tv_usec / 1000000);
 	return (ret);
 }
 
@@ -185,12 +174,14 @@ void	*manager(void *arg)
 		if (time - phil->lasteat >= phil->data->timer.die)
 		{
 			pthread_mutex_lock(&phil->action);
-			message(phil, " died\n");
+			if (!phil->data->dead)
+				message(phil, " died\n");
 			phil->data->dead++;
 			break ;
 		}
 		usleep(500);
 	}
+	return (NULL);
 }
 
 void	drop_forks(int *set, pthread_mutex_t *forks)
@@ -238,6 +229,7 @@ void	init_philo(t_phil *philosopher, t_data *data, int id)
 {
 	philosopher->id = id + 1;
 	philosopher->data = data;
+	pthread_mutex_init(&philosopher->action, NULL);
 }
 
 int	start_threads(t_data *data, t_phil *philosophers)
