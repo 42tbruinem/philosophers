@@ -6,7 +6,7 @@
 /*   By: tbruinem <tbruinem@student.codam.nl>         +#+                     */
 /*                                                   +#+                      */
 /*   Created: 2020/07/15 17:43:25 by tbruinem      #+#    #+#                 */
-/*   Updated: 2020/07/17 20:40:35 by tbruinem      ########   odam.nl         */
+/*   Updated: 2020/07/19 17:30:18 by tbruinem      ########   odam.nl         */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -26,6 +26,28 @@ unsigned int	time_msec(void)
 	ret = (time.tv_sec * 1000);
 	ret += (time.tv_usec / 1000);
 	return (ret);
+}
+
+void	uitoa(char *dest, unsigned int number, size_t *len)
+{
+	int				size;
+	unsigned int	num;
+
+	num = number;
+	size = 1;
+	while (num >= 10)
+	{
+		num /= 10;
+		size++;
+	}
+	dest[size] = '\0';
+	*len = size;
+	while (size)
+	{
+		dest[size - 1] = (number % 10) + '0';
+		number /= 10;
+		size--;
+	}
 }
 
 void	putuint(unsigned int num)
@@ -120,22 +142,33 @@ int		init_data(t_data *data, int eat_minimum, char **argv)
 	return (0);
 }
 
-void	message(t_phil *phil, char *msg)
+void	write_len(char *str, size_t len)
 {
-	size_t	len;
 	size_t	i;
 
-	len = ft_strlen(msg);
-	pthread_mutex_lock(&phil->data->messenger);
-	putuint(time_msec() - phil->data->starttime);
-	write(1, " ", 1);
-	putuint(phil->id);
 	i = 0;
-	while (i < len)
-		i += write(1, msg + i, len - i);
+	while (i != len)
+		i += write(1, str + i, len - i);
+}
+
+void	message(t_phil *phil, char *msg)
+{
+	size_t	msglen;
+	size_t	timelen;
+	size_t	numlen;
+	char	time_id[27];
+
+	msglen = ft_strlen(msg);
+	uitoa(time_id, time_msec() - phil->data->starttime, &timelen);
+	time_id[timelen] = ' ';
+	uitoa(time_id + timelen + 1, phil->id, &numlen);
+	pthread_mutex_lock(&phil->data->messenger);
+	write_len(time_id, numlen + timelen + 1);
+	write_len(msg, msglen);
 	pthread_mutex_unlock(&phil->data->messenger);
 }
 
+//this one makes it so that main waits for the simulation to end
 void	*grimreaper(void *arg)
 {
 	int		i;
@@ -168,17 +201,18 @@ void	*manager(void *arg)
 	unsigned int	time;
 
 	phil = arg;
-	while (!phil->data->dead)
+	while (1)
 	{
 		time = time_msec();
+		pthread_mutex_lock(&phil->action);
 		if (time - phil->lasteat >= phil->data->timer.die)
 		{
-			pthread_mutex_lock(&phil->action);
 			if (!phil->data->dead)
 				message(phil, " died\n");
 			phil->data->dead++;
 			break ;
 		}
+		pthread_mutex_unlock(&phil->action);
 		usleep(500);
 	}
 	return (NULL);
