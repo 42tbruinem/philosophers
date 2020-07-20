@@ -6,12 +6,11 @@
 /*   By: tbruinem <tbruinem@student.codam.nl>         +#+                     */
 /*                                                   +#+                      */
 /*   Created: 2020/07/15 17:43:25 by tbruinem      #+#    #+#                 */
-/*   Updated: 2020/07/20 18:58:43 by tbruinem      ########   odam.nl         */
+/*   Updated: 2020/07/20 20:34:50 by tbruinem      ########   odam.nl         */
 /*                                                                            */
 /* ************************************************************************** */
 
 #include "philo_one.h"
-#include <stdio.h>
 
 #define ERROR_ARGS "Wrong use of function\n"
 #define ERROR_MEM "Failed to allocate memory\n"
@@ -82,8 +81,17 @@ int		ft_atoi(char *number)
 
 int		error(t_data *data, char *errmsg)
 {
+	int	i;
+
+	i = 0;
+	while (i < data->phil_cnt)
+	{
+		pthread_mutex_destroy(&data->forks[i]);
+		pthread_mutex_destroy(&data->phil->action);
+		i++;
+	}
+	pthread_mutex_destroy(&data->messenger);
 	free(data->forks);
-	free(data->threads);
 	free(data);
 	write(1, errmsg, ft_strlen(errmsg));
 	return (1);

@@ -6,7 +6,7 @@
 /*   By: tbruinem <tbruinem@student.codam.nl>         +#+                     */
 /*                                                   +#+                      */
 /*   Created: 2020/07/16 21:11:34 by tbruinem      #+#    #+#                 */
-/*   Updated: 2020/07/20 18:06:49 by tbruinem      ########   odam.nl         */
+/*   Updated: 2020/07/20 19:08:39 by tbruinem      ########   odam.nl         */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -58,7 +58,6 @@ struct			s_data
 	int				dead;
 	int				phil_cnt;
 	pthread_mutex_t	*forks;
-	pthread_t		*threads;
 	pthread_mutex_t	messenger;
 	t_timer			timer;
 	int				eat_minimum;

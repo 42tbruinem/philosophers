@@ -6,7 +6,7 @@
 /*   By: tbruinem <tbruinem@student.codam.nl>         +#+                     */
 /*                                                   +#+                      */
 /*   Created: 2020/07/15 17:43:25 by tbruinem      #+#    #+#                 */
-/*   Updated: 2020/07/20 18:16:46 by tbruinem      ########   odam.nl         */
+/*   Updated: 2020/07/20 20:42:41 by tbruinem      ########   odam.nl         */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -82,8 +82,17 @@ int		ft_atoi(char *number)
 
 int		error(t_data *data, char *errmsg)
 {
+	int	i;
+
+	i = 0;
+	while (i < data->phil_cnt)
+	{
+		pthread_mutex_destroy(&data->forks[i]);
+		pthread_mutex_destroy(&data->phil->action);
+		i++;
+	}
+	pthread_mutex_destroy(&data->messenger);
 	free(data->forks);
-	free(data->threads);
 	free(data);
 	write(1, errmsg, ft_strlen(errmsg));
 	return (1);
@@ -91,24 +100,14 @@ int		error(t_data *data, char *errmsg)
 
 int		init_data(t_data *data, int eat_minimum, char **argv)
 {
-	int	i;
-
-	i = 0;
 	data->phil_cnt = ft_atoi(argv[0]);
 	data->timer.die = ft_atoi(argv[1]);
 	data->timer.eat = ft_atoi(argv[2]);
 	data->timer.sleep = ft_atoi(argv[3]);
-	pthread_mutex_init(&data->messenger, NULL);
+	data->messenger = sem_open("messenger", O_CREAT, 666, 1);
 	if (eat_minimum)
 		data->eat_minimum = ft_atoi(argv[4]);
-	data->forks = malloc(sizeof(pthread_mutex_t) * data->phil_cnt);
-	if (!data->forks)
-		return (1);
-	while (i < data->phil_cnt)
-	{
-		pthread_mutex_init(&data->forks[i], NULL);
-		i++;
-	}
+	data->forks = sem_open("forks", O_CREAT, 666, data->phil_cnt);
 	return (0);
 }
 
@@ -145,7 +144,7 @@ void	message(t_phil *phil, char *msg, int unlock)
 		pthread_mutex_unlock(&phil->data->messenger);
 }
 
-int	grimreaper(t_data *data)
+int		grimreaper(t_data *data)
 {
 	int		i;
 
@@ -153,20 +152,20 @@ int	grimreaper(t_data *data)
 	{
 		if (data->dead)
 			break ;
-		if (data->eat_minimum)
+		i = 0;
+		while (data->eat_minimum && i < data->phil_cnt)
 		{
-			i = 0;
-			while (i < data->phil_cnt)
+			pthread_mutex_lock(&data->phil[i].action);
+			if (data->phil[i].meals < data->eat_minimum)
 			{
-				pthread_mutex_lock(&data->phil[i].action);
-				if (data->phil[i].meals != data->eat_minimum)
-					break ;
 				pthread_mutex_unlock(&data->phil[i].action);
-				i++;
-			}
-			if (i == data->phil_cnt)
 				break ;
+			}
+			pthread_mutex_unlock(&data->phil[i].action);
+			i++;
 		}
+		if (i == data->phil_cnt)
+			return (0);
 		usleep(500);
 	}
 	return (0);
@@ -204,9 +203,13 @@ void	drop_forks(int *set, pthread_mutex_t *forks)
 void	get_forks(t_phil *phil, int *set, pthread_mutex_t *forks)
 {
 	pthread_mutex_lock(&forks[set[LEFT]]);
+	pthread_mutex_lock(&phil->action);
 	message(phil, " has taken a fork\n", 1);
+	pthread_mutex_unlock(&phil->action);
 	pthread_mutex_lock(&forks[set[RIGHT]]);
+	pthread_mutex_lock(&phil->action);
 	message(phil, " is eating\n", 1);
+	pthread_mutex_unlock(&phil->action);
 }
 
 void	*simulate(void *arg)
