@@ -6,7 +6,7 @@
 /*   By: tbruinem <tbruinem@student.codam.nl>         +#+                     */
 /*                                                   +#+                      */
 /*   Created: 2020/07/16 21:11:34 by tbruinem      #+#    #+#                 */
-/*   Updated: 2020/07/16 23:25:17 by tbruinem      ########   odam.nl         */
+/*   Updated: 2020/07/20 18:06:49 by tbruinem      ########   odam.nl         */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -35,9 +35,9 @@ enum	e_side
 
 typedef struct	s_timer
 {
-	int	die;
-	int	eat;
-	int	sleep;
+	unsigned long	die;
+	unsigned long	eat;
+	unsigned long	sleep;
 }				t_timer;
 
 typedef struct s_data	t_data;
@@ -47,14 +47,13 @@ typedef struct	s_phil
 	t_data			*data;
 	int				meals;
 	pthread_mutex_t	action;
-	pthread_mutex_t	halt;
-	unsigned int	lasteat;
+	unsigned long	lasteat;
 	int				id;
 }				t_phil;
 
 struct			s_data
 {
-	unsigned int	starttime;
+	unsigned long	starttime;
 	t_phil			*phil;
 	int				dead;
 	int				phil_cnt;
