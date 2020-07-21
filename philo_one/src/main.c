@@ -6,7 +6,7 @@
 /*   By: tbruinem <tbruinem@student.codam.nl>         +#+                     */
 /*                                                   +#+                      */
 /*   Created: 2020/07/15 17:43:25 by tbruinem      #+#    #+#                 */
-/*   Updated: 2020/07/20 20:34:50 by tbruinem      ########   odam.nl         */
+/*   Updated: 2020/07/21 16:05:02 by tbruinem      ########   odam.nl         */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -91,6 +91,7 @@ int		error(t_data *data, char *errmsg)
 		i++;
 	}
 	pthread_mutex_destroy(&data->messenger);
+	free(data->phil);
 	free(data->forks);
 	free(data);
 	write(1, errmsg, ft_strlen(errmsg));
@@ -295,6 +296,7 @@ int		main(int argc, char **argv)
 	data->phil = philosophers;
 	if (start_threads(data, philosophers))
 		return (error(data, ERROR_PTHREAD));
+	free(philosophers);
 	free(data);
 	return (0);
 }

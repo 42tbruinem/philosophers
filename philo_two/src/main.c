@@ -6,12 +6,13 @@
 /*   By: tbruinem <tbruinem@student.codam.nl>         +#+                     */
 /*                                                   +#+                      */
 /*   Created: 2020/07/15 17:43:25 by tbruinem      #+#    #+#                 */
-/*   Updated: 2020/07/20 20:42:41 by tbruinem      ########   odam.nl         */
+/*   Updated: 2020/07/21 17:36:46 by tbruinem      ########   odam.nl         */
 /*                                                                            */
 /* ************************************************************************** */
 
 #include "philo_one.h"
 #include <stdio.h>
+#include <errno.h>
 
 #define ERROR_ARGS "Wrong use of function\n"
 #define ERROR_MEM "Failed to allocate memory\n"
@@ -60,6 +61,19 @@ size_t	ft_strlen(char *str)
 	return (i);
 }
 
+size_t	ft_strcpy(char *src, char *dst)
+{
+	size_t	i;
+
+	i = 0;
+	while (src[i])
+	{
+		dst[i] = src[i];
+		i++;
+	}
+	return (i);
+}
+
 int		ft_atoi(char *number)
 {
 	unsigned int	num;
@@ -80,6 +94,23 @@ int		ft_atoi(char *number)
 	return (num * sign);
 }
 
+char	*get_semname(char *basename, unsigned long id)
+{
+	char	*new;
+	size_t	bname_len;
+	size_t	size;
+
+	bname_len = ft_strlen(basename);
+	new = malloc(sizeof(char) * bname_len + 1 + 20);
+	if (!new)
+		return (NULL);
+	size = ft_strcpy(basename, new);
+	new[size] = ' ';
+	ultoa(new + size + 1, id, &size);
+	new[bname_len + size + 1] = '\0';
+	return (new);
+}
+
 int		error(t_data *data, char *errmsg)
 {
 	int	i;
@@ -87,12 +118,12 @@ int		error(t_data *data, char *errmsg)
 	i = 0;
 	while (i < data->phil_cnt)
 	{
-		pthread_mutex_destroy(&data->forks[i]);
-		pthread_mutex_destroy(&data->phil->action);
+		sem_close(data->phil->action);
 		i++;
 	}
-	pthread_mutex_destroy(&data->messenger);
-	free(data->forks);
+	sem_close(data->messenger);
+	sem_close(data->forks);
+	free(data->phil);
 	free(data);
 	write(1, errmsg, ft_strlen(errmsg));
 	return (1);
@@ -104,10 +135,17 @@ int		init_data(t_data *data, int eat_minimum, char **argv)
 	data->timer.die = ft_atoi(argv[1]);
 	data->timer.eat = ft_atoi(argv[2]);
 	data->timer.sleep = ft_atoi(argv[3]);
+	sem_unlink("messenger");
 	data->messenger = sem_open("messenger", O_CREAT, 666, 1);
+	if (!data->messenger)
+	{
+		printf("errno: %s\n", strerror(errno));
+		return (1);
+	}
 	if (eat_minimum)
 		data->eat_minimum = ft_atoi(argv[4]);
-	data->forks = sem_open("forks", O_CREAT, 666, data->phil_cnt);
+	sem_unlink("forks");
+	data->forks = sem_open("forks", O_CREAT, 666, data->phil_cnt); 
 	return (0);
 }
 
@@ -137,11 +175,11 @@ void	message(t_phil *phil, char *msg, int unlock)
 	ultoa(time_id, time_msec() - phil->data->starttime, &timelen);
 	time_id[timelen] = ' ';
 	ultoa(time_id + timelen + 1, phil->id, &numlen);
-	pthread_mutex_lock(&phil->data->messenger);
+	sem_wait(phil->data->messenger);
 	write_len(time_id, numlen + timelen + 1);
 	write_len(msg, msglen);
 	if (unlock)
-		pthread_mutex_unlock(&phil->data->messenger);
+		sem_post(phil->data->messenger);
 }
 
 int		grimreaper(t_data *data)
@@ -155,17 +193,17 @@ int		grimreaper(t_data *data)
 		i = 0;
 		while (data->eat_minimum && i < data->phil_cnt)
 		{
-			pthread_mutex_lock(&data->phil[i].action);
+			sem_wait(data->phil[i].action);
 			if (data->phil[i].meals < data->eat_minimum)
 			{
-				pthread_mutex_unlock(&data->phil[i].action);
+				sem_post(data->phil[i].action);
 				break ;
 			}
-			pthread_mutex_unlock(&data->phil[i].action);
+			sem_post(data->phil[i].action);
 			i++;
 		}
 		if (i == data->phil_cnt)
-			return (0);
+			break ;
 		usleep(500);
 	}
 	return (0);
@@ -179,7 +217,7 @@ void	*manager(void *arg)
 	phil = arg;
 	while (1)
 	{
-		pthread_mutex_lock(&phil->action);
+		sem_wait(phil->action);
 		time = time_msec();
 		if (phil->data->dead || time - phil->lasteat >= phil->data->timer.die)
 		{
@@ -188,51 +226,48 @@ void	*manager(void *arg)
 			phil->data->dead++;
 		}
 		else
-			pthread_mutex_unlock(&phil->action);
+			sem_post(phil->action);
 		usleep(500);
 	}
 	return (NULL);
 }
 
-void	drop_forks(int *set, pthread_mutex_t *forks)
+void	drop_forks(sem_t *forks)
 {
-	pthread_mutex_unlock(&forks[set[LEFT]]);
-	pthread_mutex_unlock(&forks[set[RIGHT]]);
+	sem_post(forks);
+	sem_post(forks);
 }
 
-void	get_forks(t_phil *phil, int *set, pthread_mutex_t *forks)
+void	get_forks(t_phil *phil, sem_t *forks)
 {
-	pthread_mutex_lock(&forks[set[LEFT]]);
-	pthread_mutex_lock(&phil->action);
+	sem_wait(forks);
+	sem_wait(phil->action);
 	message(phil, " has taken a fork\n", 1);
-	pthread_mutex_unlock(&phil->action);
-	pthread_mutex_lock(&forks[set[RIGHT]]);
-	pthread_mutex_lock(&phil->action);
+	sem_post(phil->action);
+	sem_wait(forks);
+	sem_wait(phil->action);
 	message(phil, " is eating\n", 1);
-	pthread_mutex_unlock(&phil->action);
+	sem_post(phil->action);
 }
 
 void	*simulate(void *arg)
 {
 	t_phil			*phil;
-	int				fork[2];
 	unsigned long	lasteat;
 
 	phil = arg;
 	phil->lasteat = time_msec();
-	fork[LEFT] = phil->id - 1;
-	fork[RIGHT] = (phil->id != phil->data->phil_cnt) ? phil->id : 0;
 	while (1)
 	{
 		message(phil, " is thinking\n", 1);
-		get_forks(phil, fork, phil->data->forks);
+		get_forks(phil, phil->data->forks);
 		lasteat = time_msec();
-		pthread_mutex_lock(&phil->action);
+		sem_wait(phil->action);
 		phil->meals++;
 		phil->lasteat = lasteat;
-		pthread_mutex_unlock(&phil->action);
+		sem_post(phil->action);
 		usleep(phil->data->timer.eat * 1000);
-		drop_forks(fork, phil->data->forks);
+		drop_forks(phil->data->forks);
 		message(phil, " is sleeping\n", 1);
 		usleep(phil->data->timer.sleep * 1000);
 	}
@@ -241,9 +276,16 @@ void	*simulate(void *arg)
 
 void	init_philo(t_phil *philosopher, t_data *data, int id)
 {
-	philosopher->id = id + 1;
+	char	*semname;
+
 	philosopher->data = data;
-	pthread_mutex_init(&philosopher->action, NULL);
+	philosopher->id = id + 1;
+	semname = get_semname("action", id);
+	if (!semname)
+		return ;
+	sem_unlink(semname);
+	sem_open(semname, O_CREAT, 666, 1);
+	free(semname);
 }
 
 int	start_threads(t_data *data, t_phil *philosophers)
@@ -286,6 +328,9 @@ int		main(int argc, char **argv)
 	data->phil = philosophers;
 	if (start_threads(data, philosophers))
 		return (error(data, ERROR_PTHREAD));
+	sem_close(data->messenger);
+	sem_close(data->forks);
+	free(philosophers);
 	free(data);
 	return (0);
 }
