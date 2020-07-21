@@ -6,7 +6,7 @@
 /*   By: tbruinem <tbruinem@student.codam.nl>         +#+                     */
 /*                                                   +#+                      */
 /*   Created: 2020/07/15 17:43:25 by tbruinem      #+#    #+#                 */
-/*   Updated: 2020/07/21 17:36:46 by tbruinem      ########   odam.nl         */
+/*   Updated: 2020/07/21 18:33:01 by tbruinem      ########   odam.nl         */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -280,6 +280,7 @@ void	init_philo(t_phil *philosopher, t_data *data, int id)
 
 	philosopher->data = data;
 	philosopher->id = id + 1;
+	philosopher->meals = 0;
 	semname = get_semname("action", id);
 	if (!semname)
 		return ;
@@ -328,8 +329,8 @@ int		main(int argc, char **argv)
 	data->phil = philosophers;
 	if (start_threads(data, philosophers))
 		return (error(data, ERROR_PTHREAD));
-	sem_close(data->messenger);
-	sem_close(data->forks);
+	sem_unlink("messenger");
+	sem_unlink("forks");
 	free(philosophers);
 	free(data);
 	return (0);

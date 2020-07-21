@@ -6,26 +6,21 @@
 /*   By: tbruinem <tbruinem@student.codam.nl>         +#+                     */
 /*                                                   +#+                      */
 /*   Created: 2020/07/16 21:11:34 by tbruinem      #+#    #+#                 */
-/*   Updated: 2020/07/20 19:08:39 by tbruinem      ########   odam.nl         */
+/*   Updated: 2020/07/21 20:54:49 by tbruinem      ########   odam.nl         */
 /*                                                                            */
 /* ************************************************************************** */
 
 #ifndef PHILO_ONE_H
 # define PHILO_ONE_H
 
-#include <unistd.h>
-#include <pthread.h>
-#include <string.h>
-#include <fcntl.h>
-#include <sys/time.h>
-#include <stdlib.h>
-
-enum	e_action
-{
-	EAT,
-	SLEEP,
-	THINK,
-};
+# include <unistd.h>
+# include <semaphore.h>
+# include <pthread.h>
+# include <string.h>
+# include <fcntl.h>
+# include <sys/stat.h>
+# include <sys/time.h>
+# include <stdlib.h>
 
 enum	e_side
 {
@@ -46,7 +41,9 @@ typedef struct	s_phil
 {
 	t_data			*data;
 	int				meals;
-	pthread_mutex_t	action;
+	sem_t			*action;
+	sem_t			*mealsreached;
+	int				alreadyreached;
 	unsigned long	lasteat;
 	int				id;
 }				t_phil;
@@ -54,11 +51,13 @@ typedef struct	s_phil
 struct			s_data
 {
 	unsigned long	starttime;
+	int				*pids;
 	t_phil			*phil;
 	int				dead;
+	sem_t			*halt;
 	int				phil_cnt;
-	pthread_mutex_t	*forks;
-	pthread_mutex_t	messenger;
+	sem_t			*forks;
+	sem_t			*messenger;
 	t_timer			timer;
 	int				eat_minimum;
 };

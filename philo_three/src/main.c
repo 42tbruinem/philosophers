@@ -6,12 +6,15 @@
 /*   By: tbruinem <tbruinem@student.codam.nl>         +#+                     */
 /*                                                   +#+                      */
 /*   Created: 2020/07/15 17:43:25 by tbruinem      #+#    #+#                 */
-/*   Updated: 2020/07/20 19:10:27 by tbruinem      ########   odam.nl         */
+/*   Updated: 2020/07/21 21:31:41 by tbruinem      ########   odam.nl         */
 /*                                                                            */
 /* ************************************************************************** */
 
 #include "philo_one.h"
 #include <stdio.h>
+#include <errno.h>
+#include <semaphore.h>
+#include <signal.h>
 
 #define ERROR_ARGS "Wrong use of function\n"
 #define ERROR_MEM "Failed to allocate memory\n"
@@ -60,6 +63,19 @@ size_t	ft_strlen(char *str)
 	return (i);
 }
 
+size_t	ft_strcpy(char *src, char *dst)
+{
+	size_t	i;
+
+	i = 0;
+	while (src[i])
+	{
+		dst[i] = src[i];
+		i++;
+	}
+	return (i);
+}
+
 int		ft_atoi(char *number)
 {
 	unsigned int	num;
@@ -87,12 +103,12 @@ int		error(t_data *data, char *errmsg)
 	i = 0;
 	while (i < data->phil_cnt)
 	{
-		pthread_mutex_destroy(&data->forks[i]);
-		pthread_mutex_destroy(&data->phil->action);
+		sem_close(data->phil->action);
 		i++;
 	}
-	pthread_mutex_destroy(&data->messenger);
-	free(data->forks);
+	sem_close(data->messenger);
+	sem_close(data->forks);
+	free(data->phil);
 	free(data);
 	write(1, errmsg, ft_strlen(errmsg));
 	return (1);
@@ -100,24 +116,23 @@ int		error(t_data *data, char *errmsg)
 
 int		init_data(t_data *data, int eat_minimum, char **argv)
 {
-	int	i;
-
-	i = 0;
 	data->phil_cnt = ft_atoi(argv[0]);
 	data->timer.die = ft_atoi(argv[1]);
 	data->timer.eat = ft_atoi(argv[2]);
 	data->timer.sleep = ft_atoi(argv[3]);
-	pthread_mutex_init(&data->messenger, NULL);
+	sem_unlink("messenger");
+	data->messenger = sem_open("messenger", O_CREAT, 666, 1);
+	sem_unlink("halt");
+	data->halt = sem_open("halt", O_CREAT, 666, 0);
+	if (!data->messenger)
+		exit(1);
 	if (eat_minimum)
 		data->eat_minimum = ft_atoi(argv[4]);
-	data->forks = malloc(sizeof(pthread_mutex_t) * data->phil_cnt);
-	if (!data->forks)
-		return (1);
-	while (i < data->phil_cnt)
-	{
-		pthread_mutex_init(&data->forks[i], NULL);
-		i++;
-	}
+	data->pids = malloc(sizeof(int) * data->phil_cnt);
+	if (!data->pids)
+		exit(1);
+	sem_unlink("forks");
+	data->forks = sem_open("forks", O_CREAT, 666, data->phil_cnt);
 	return (0);
 }
 
@@ -147,38 +162,11 @@ void	message(t_phil *phil, char *msg, int unlock)
 	ultoa(time_id, time_msec() - phil->data->starttime, &timelen);
 	time_id[timelen] = ' ';
 	ultoa(time_id + timelen + 1, phil->id, &numlen);
-	pthread_mutex_lock(&phil->data->messenger);
+	sem_wait(phil->data->messenger);
 	write_len(time_id, numlen + timelen + 1);
 	write_len(msg, msglen);
 	if (unlock)
-		pthread_mutex_unlock(&phil->data->messenger);
-}
-
-int		grimreaper(t_data *data)
-{
-	int		i;
-
-	while (1)
-	{
-		if (data->dead)
-			break ;
-		i = 0;
-		while (data->eat_minimum && i < data->phil_cnt)
-		{
-			pthread_mutex_lock(&data->phil[i].action);
-			if (data->phil[i].meals < data->eat_minimum)
-			{
-				pthread_mutex_unlock(&data->phil[i].action);
-				break ;
-			}
-			pthread_mutex_unlock(&data->phil[i].action);
-			i++;
-		}
-		if (i == data->phil_cnt)
-			return (0);
-		usleep(500);
-	}
-	return (0);
+		sem_post(phil->data->messenger);
 }
 
 void	*manager(void *arg)
@@ -189,92 +177,149 @@ void	*manager(void *arg)
 	phil = arg;
 	while (1)
 	{
-		pthread_mutex_lock(&phil->action);
-		time = time_msec();
-		if (phil->data->dead || time - phil->lasteat >= phil->data->timer.die)
+		sem_wait(phil->action);
+		if (!phil->alreadyreached && phil->data->eat_minimum &&
+			phil->meals >= phil->data->eat_minimum)
 		{
-			if (!phil->data->dead)
-				message(phil, " died\n", 0);
-			phil->data->dead++;
+			sem_post(phil->mealsreached);
+			phil->alreadyreached = 1;
+		}
+		time = time_msec();
+		if (time - phil->lasteat >= phil->data->timer.die)
+		{
+			message(phil, " died\n", 0);
+			sem_post(phil->data->halt);
+			exit(0);
 		}
 		else
-			pthread_mutex_unlock(&phil->action);
+			sem_post(phil->action);
 		usleep(500);
 	}
 	return (NULL);
 }
 
-void	drop_forks(int *set, pthread_mutex_t *forks)
+void	drop_forks(sem_t *forks)
 {
-	pthread_mutex_unlock(&forks[set[LEFT]]);
-	pthread_mutex_unlock(&forks[set[RIGHT]]);
+	sem_post(forks);
+	sem_post(forks);
 }
 
-void	get_forks(t_phil *phil, int *set, pthread_mutex_t *forks)
+void	get_forks(t_phil *phil, sem_t *forks)
 {
-	pthread_mutex_lock(&forks[set[LEFT]]);
-	pthread_mutex_lock(&phil->action);
+	sem_wait(forks);
 	message(phil, " has taken a fork\n", 1);
-	pthread_mutex_unlock(&phil->action);
-	pthread_mutex_lock(&forks[set[RIGHT]]);
-	pthread_mutex_lock(&phil->action);
+	sem_wait(forks);
 	message(phil, " is eating\n", 1);
-	pthread_mutex_unlock(&phil->action);
 }
 
-void	*simulate(void *arg)
+void	simulate(t_phil *phil)
 {
-	t_phil			*phil;
-	int				fork[2];
 	unsigned long	lasteat;
+	pthread_t		thread;
 
-	phil = arg;
 	phil->lasteat = time_msec();
-	fork[LEFT] = phil->id - 1;
-	fork[RIGHT] = (phil->id != phil->data->phil_cnt) ? phil->id : 0;
+	pthread_create(&thread, NULL, &manager, phil);
+	pthread_detach(thread);
 	while (1)
 	{
 		message(phil, " is thinking\n", 1);
-		get_forks(phil, fork, phil->data->forks);
+		get_forks(phil, phil->data->forks);
 		lasteat = time_msec();
-		pthread_mutex_lock(&phil->action);
+		sem_wait(phil->action);
 		phil->meals++;
 		phil->lasteat = lasteat;
-		pthread_mutex_unlock(&phil->action);
+		sem_post(phil->action);
 		usleep(phil->data->timer.eat * 1000);
-		drop_forks(fork, phil->data->forks);
+		drop_forks(phil->data->forks);
 		message(phil, " is sleeping\n", 1);
 		usleep(phil->data->timer.sleep * 1000);
 	}
+	exit(0);
+}
+
+void	init_philo(t_phil *philosopher, t_data *data)
+{
+	int	i;
+
+	i = 0;
+	while (i < data->phil_cnt)
+	{
+		philosopher[i].data = data;
+		philosopher[i].id = i + 1;
+		philosopher[i].meals = 0;
+		philosopher[i].alreadyreached = 0;
+		sem_unlink("action");
+		philosopher[i].action = sem_open("action", O_CREAT, 666, 1);
+		sem_unlink("meals");
+		philosopher[i].mealsreached = sem_open("meals", O_CREAT, 666, 0);
+		i++;
+	}
+}
+
+void	kill_processes(t_data *data)
+{
+	int		i;
+	pid_t	pid;
+
+	i = 0;
+	while (i < data->phil_cnt)
+	{
+		kill(data->pids[i], SIGTERM);
+		i++;
+	}
+	i = 0;
+	while (i < data->phil_cnt)
+	{
+		(void)waitpid(data->pids[i], &pid, 0);
+		i++;
+	}
+	sem_unlink("halt");
+	sem_unlink("messenger");
+	sem_unlink("forks");
+	free(data->phil);
+	free(data);
+	exit(0);
+}
+
+void	*mealcounter(void *arg)
+{
+	t_data	*data;
+	int		i;
+
+	i = 0;
+	data = arg;
+	while (i < data->phil_cnt)
+	{
+		sem_wait(data->phil[i].mealsreached);
+		i++;
+	}
+	kill_processes(data);
 	return (NULL);
 }
 
-void	init_philo(t_phil *philosopher, t_data *data, int id)
-{
-	philosopher->id = id + 1;
-	philosopher->data = data;
-	pthread_mutex_init(&philosopher->action, NULL);
-}
-
-int	start_threads(t_data *data, t_phil *philosophers)
+void	start_processes(t_data *data, t_phil *philosophers)
 {
 	int			i;
+	int			pid;
 	pthread_t	thread;
 
 	i = 0;
+	init_philo(philosophers, data);
 	data->starttime = time_msec();
 	while (i < data->phil_cnt)
 	{
-		init_philo(&philosophers[i], data, i);
-		if (pthread_create(&thread, NULL, simulate, &philosophers[i]))
-			return (1);
-		pthread_detach(thread);
-		if (pthread_create(&thread, NULL, manager, &philosophers[i]))
-			return (1);
-		pthread_detach(thread);
+		pid = fork();
+		if (pid == -1)
+			exit(1);
+		if (!pid)
+			simulate(&philosophers[i]);
+		data->pids[i] = pid;
 		i++;
 	}
-	return (grimreaper(data));
+	pthread_create(&thread, NULL, &mealcounter, data);
+	pthread_detach(thread);
+	sem_wait(data->halt);
+	kill_processes(data);
 }
 
 int		main(int argc, char **argv)
@@ -294,8 +339,6 @@ int		main(int argc, char **argv)
 	if (!philosophers)
 		return (error(data, ERROR_MEM));
 	data->phil = philosophers;
-	if (start_threads(data, philosophers))
-		return (error(data, ERROR_PTHREAD));
-	free(data);
+	start_processes(data, philosophers);
 	return (0);
 }
