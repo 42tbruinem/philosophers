@@ -11,21 +11,33 @@
 # **************************************************************************** #
 
 NAME =		philo_one
-SRC_DIR =	./src
-OBJ_DIR =	./obj
+SRC_DIR =	src
+OBJ_DIR =	obj
 TAIL =		-pthread
-INCL =		-I .
+INCL =		-I incl/
 FLAGS =		-Wall -Wextra -Werror
 SRC	=		main.c
 
-SRC :=		$(SRC:%.c=)
-OBJ =		$(SRC:%.c=%.o)
+OBJ := $(addprefix $(OBJ_DIR)/, $(SRC:%.c=%.o))
+SRC := $(addprefix $(SRC_DIR)/, $(SRC))
 
 all: $(NAME)
 
-obj/%.o: src/%.o
-	@mkdir -p $($D)
+obj/%.o: src/%.c
+	@mkdir -p $(@D)
 	@echo "Compiling $@"
-	$(CC) -c $(FLAGS) $(INCL) $< -o $@
+	@$(CC) -c $(FLAGS) $(INCL) $< $(TAIL) -o $@
 
 $(NAME): $(OBJ)
+	@$(CC) $(FLAGS) $(INCL) $(TAIL) $^ -o $@
+	@echo "Succesfully compiled $(NAME)"
+
+clean:
+	@rm -rf $(OBJ)
+	@echo "Done cleaning"
+
+fclean: clean
+	@rm -rf $(NAME)
+	@echo "Done fcleaning"
+
+re: fclean all
