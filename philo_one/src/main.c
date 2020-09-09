@@ -11,6 +11,7 @@
 /* ************************************************************************** */
 
 #include "philo_one.h"
+#include <stdio.h>
 
 #define ERROR_ARGS "Wrong use of function\n"
 #define ERROR_MEM "Failed to allocate memory\n"
@@ -87,7 +88,7 @@ int		error(t_data *data, char *errmsg)
 	while (i < data->phil_cnt)
 	{
 		pthread_mutex_destroy(&data->forks[i]);
-		pthread_mutex_destroy(&data->phil->action);
+		pthread_mutex_destroy(&data->phil->eatlock);
 		i++;
 	}
 	pthread_mutex_destroy(&data->messenger);
@@ -96,6 +97,21 @@ int		error(t_data *data, char *errmsg)
 	free(data);
 	write(1, errmsg, ft_strlen(errmsg));
 	return (1);
+}
+
+int		parse_data(t_data *data, int eat_minimum)
+{
+	if (data->phil_cnt <= 0 || data->phil_cnt >= 200)
+		return (1);
+	if (eat_minimum && data->eat_minimum <= 0)
+		return (1);
+	if (data->timer.die < 60)
+		return (1);
+	if (data->timer.eat < 60)
+		return (1);
+	if (data->timer.sleep < 60)
+		return (1);
+	return (0);
 }
 
 int		init_data(t_data *data, int eat_minimum, char **argv)
@@ -107,9 +123,13 @@ int		init_data(t_data *data, int eat_minimum, char **argv)
 	data->timer.die = ft_atoi(argv[1]);
 	data->timer.eat = ft_atoi(argv[2]);
 	data->timer.sleep = ft_atoi(argv[3]);
-	pthread_mutex_init(&data->messenger, NULL);
 	if (eat_minimum)
 		data->eat_minimum = ft_atoi(argv[4]);
+	if (parse_data(data, eat_minimum))
+		return (1);
+	data->dead = 0;
+	pthread_mutex_init(&data->messenger, NULL);
+	pthread_mutex_init(&data->deadlock, NULL);
 	data->forks = malloc(sizeof(pthread_mutex_t) * data->phil_cnt);
 	if (!data->forks)
 		return (1);
@@ -160,18 +180,20 @@ int		grimreaper(t_data *data)
 
 	while (1)
 	{
-		if (data->dead)
-			break ;
 		i = 0;
 		while (data->eat_minimum && i < data->phil_cnt)
 		{
-			pthread_mutex_lock(&data->phil[i].action);
+			pthread_mutex_lock(&data->phil[i].eatlock);
+			pthread_mutex_lock(&data->deadlock);
+			if (data->dead)
+				break ;
+			pthread_mutex_unlock(&data->deadlock);
 			if (data->phil[i].meals < data->eat_minimum)
 			{
-				pthread_mutex_unlock(&data->phil[i].action);
+				pthread_mutex_unlock(&data->phil[i].eatlock);
 				break ;
 			}
-			pthread_mutex_unlock(&data->phil[i].action);
+			pthread_mutex_unlock(&data->phil[i].eatlock);
 			i++;
 		}
 		if (i == data->phil_cnt)
@@ -189,7 +211,8 @@ void	*manager(void *arg)
 	phil = arg;
 	while (1)
 	{
-		pthread_mutex_lock(&phil->action);
+		pthread_mutex_lock(&phil->eatlock);
+		pthread_mutex_lock(&phil->data->deadlock);
 		time = time_msec();
 		if (phil->data->dead || time - phil->lasteat >= phil->data->timer.die)
 		{
@@ -197,8 +220,8 @@ void	*manager(void *arg)
 				message(phil, " died\n", 0);
 			phil->data->dead++;
 		}
-		else
-			pthread_mutex_unlock(&phil->action);
+		pthread_mutex_unlock(&phil->eatlock);
+		pthread_mutex_unlock(&phil->data->deadlock);
 		usleep(500);
 	}
 	return (NULL);
@@ -206,41 +229,40 @@ void	*manager(void *arg)
 
 void	drop_forks(int *set, pthread_mutex_t *forks)
 {
-	pthread_mutex_unlock(&forks[set[LEFT]]);
 	pthread_mutex_unlock(&forks[set[RIGHT]]);
+	pthread_mutex_unlock(&forks[set[LEFT]]);
 }
 
 void	get_forks(t_phil *phil, int *set, pthread_mutex_t *forks)
 {
 	pthread_mutex_lock(&forks[set[LEFT]]);
-	pthread_mutex_lock(&phil->action);
 	message(phil, " has taken a fork\n", 1);
-	pthread_mutex_unlock(&phil->action);
 	pthread_mutex_lock(&forks[set[RIGHT]]);
-	pthread_mutex_lock(&phil->action);
 	message(phil, " is eating\n", 1);
-	pthread_mutex_unlock(&phil->action);
+}
+
+void update_last_eat(t_phil *phil, unsigned long time)
+{
+	pthread_mutex_lock(&phil->eatlock);
+	phil->meals++;
+	phil->lasteat = time;
+	pthread_mutex_unlock(&phil->eatlock);
 }
 
 void	*simulate(void *arg)
 {
 	t_phil			*phil;
 	int				fork[2];
-	unsigned long	lasteat;
 
 	phil = arg;
-	phil->lasteat = time_msec();
+	update_last_eat(phil, time_msec());
 	fork[LEFT] = phil->id - 1;
 	fork[RIGHT] = (phil->id != phil->data->phil_cnt) ? phil->id : 0;
 	while (1)
 	{
 		message(phil, " is thinking\n", 1);
 		get_forks(phil, fork, phil->data->forks);
-		lasteat = time_msec();
-		pthread_mutex_lock(&phil->action);
-		phil->meals++;
-		phil->lasteat = lasteat;
-		pthread_mutex_unlock(&phil->action);
+		update_last_eat(phil, time_msec());
 		usleep(phil->data->timer.eat * 1000);
 		drop_forks(fork, phil->data->forks);
 		message(phil, " is sleeping\n", 1);
@@ -253,7 +275,9 @@ void	init_philo(t_phil *philosopher, t_data *data, int id)
 {
 	philosopher->id = id + 1;
 	philosopher->data = data;
-	pthread_mutex_init(&philosopher->action, NULL);
+	philosopher->meals = -1;
+	philosopher->lasteat = time_msec();
+	pthread_mutex_init(&philosopher->eatlock, NULL);
 }
 
 int	start_threads(t_data *data, t_phil *philosophers)
@@ -273,6 +297,7 @@ int	start_threads(t_data *data, t_phil *philosophers)
 			return (1);
 		pthread_detach(thread);
 		i++;
+		usleep(100);
 	}
 	return (grimreaper(data));
 }

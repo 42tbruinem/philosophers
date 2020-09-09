@@ -10,8 +10,8 @@
 /*                                                                            */
 /* ************************************************************************** */
 
-#ifndef PHILO_ONE_H
-# define PHILO_ONE_H
+#ifndef PHILO_TWO_H
+# define PHILO_TWO_H
 
 # include <unistd.h>
 # include <semaphore.h>
@@ -52,10 +52,11 @@ struct			s_data
 	int				*pids;
 	t_phil			*phil;
 	int				dead;
-	sem_t			*halt;
 	int				phil_cnt;
+	sem_t			*halt;
 	sem_t			*forks;
 	sem_t			*messenger;
+	sem_t			*deadlock;
 	t_timer			timer;
 	int				eat_minimum;
 };

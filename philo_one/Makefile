@@ -21,6 +21,14 @@ SRC	=		main.c
 OBJ := $(addprefix $(OBJ_DIR)/, $(SRC:%.c=%.o))
 SRC := $(addprefix $(SRC_DIR)/, $(SRC))
 
+ifeq ($(DEBUG),1)
+FLAGS += -g -fsanitize=address
+endif
+
+ifeq ($(DEBUG),2)
+FLAGS += -g -fsanitize=thread
+endif
+
 all: $(NAME)
 
 obj/%.o: src/%.c

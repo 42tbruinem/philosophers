@@ -46,7 +46,7 @@ typedef struct	s_phil
 {
 	t_data			*data;
 	int				meals;
-	pthread_mutex_t	action;
+	pthread_mutex_t	eatlock;
 	unsigned long	lasteat;
 	int				id;
 }				t_phil;
@@ -59,6 +59,7 @@ struct			s_data
 	int				phil_cnt;
 	pthread_mutex_t	*forks;
 	pthread_mutex_t	messenger;
+	pthread_mutex_t deadlock;
 	t_timer			timer;
 	int				eat_minimum;
 };

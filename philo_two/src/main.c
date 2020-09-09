@@ -10,7 +10,7 @@
 /*                                                                            */
 /* ************************************************************************** */
 
-#include "philo_one.h"
+#include "philo_two.h"
 #include <stdio.h>
 #include <errno.h>
 
@@ -113,20 +113,25 @@ char	*get_semname(char *basename, unsigned long id)
 
 int		error(t_data *data, char *errmsg)
 {
-	int	i;
-
-	i = 0;
-	while (i < data->phil_cnt)
-	{
-		sem_close(data->phil->action);
-		i++;
-	}
-	sem_close(data->messenger);
-	sem_close(data->forks);
 	free(data->phil);
 	free(data);
 	write(1, errmsg, ft_strlen(errmsg));
 	return (1);
+}
+
+int		parse_data(t_data *data, int eat_minimum)
+{
+	if (data->phil_cnt <= 0 || data->phil_cnt >= 200)
+		return (1);
+	if (eat_minimum && data->eat_minimum <= 0)
+		return (1);
+	if (data->timer.die < 60)
+		return (1);
+	if (data->timer.eat < 60)
+		return (1);
+	if (data->timer.sleep < 60)
+		return (1);
+	return (0);
 }
 
 int		init_data(t_data *data, int eat_minimum, char **argv)
@@ -135,17 +140,22 @@ int		init_data(t_data *data, int eat_minimum, char **argv)
 	data->timer.die = ft_atoi(argv[1]);
 	data->timer.eat = ft_atoi(argv[2]);
 	data->timer.sleep = ft_atoi(argv[3]);
+	if (eat_minimum)
+		data->eat_minimum = ft_atoi(argv[4]);
+	if (parse_data(data, eat_minimum))
+		return (1);
+	sem_unlink("dead");
+	data->deadlock = sem_open("dead", O_CREAT, 666, 1);
+	if (!data->deadlock)
+		return (1);
 	sem_unlink("messenger");
 	data->messenger = sem_open("messenger", O_CREAT, 666, 1);
 	if (!data->messenger)
-	{
-		printf("errno: %s\n", strerror(errno));
 		return (1);
-	}
-	if (eat_minimum)
-		data->eat_minimum = ft_atoi(argv[4]);
 	sem_unlink("forks");
-	data->forks = sem_open("forks", O_CREAT, 666, data->phil_cnt); 
+	data->forks = sem_open("forks", O_CREAT, 666, data->phil_cnt);
+	if (!data->forks)
+		return (1);
 	return (0);
 }
 
@@ -182,15 +192,12 @@ void	message(t_phil *phil, char *msg, int unlock)
 		sem_post(phil->data->messenger);
 }
 
-int		grimreaper(t_data *data)
+int		weightwatcher(t_data *data)
 {
 	int		i;
 
 	while (1)
 	{
-		if (data->dead)
-			break ;
-		i = 0;
 		while (data->eat_minimum && i < data->phil_cnt)
 		{
 			sem_wait(data->phil[i].action);
@@ -203,7 +210,10 @@ int		grimreaper(t_data *data)
 			i++;
 		}
 		if (i == data->phil_cnt)
+		{
+			sem_wait(data->deadlock);
 			break ;
+		}
 		usleep(500);
 	}
 	return (0);
@@ -212,21 +222,25 @@ int		grimreaper(t_data *data)
 void	*manager(void *arg)
 {
 	t_phil			*phil;
+	sem_t			*action;
+	sem_t			*dead;
 	unsigned long	time;
 
 	phil = arg;
+	action = phil->action;
+	dead = phil->data->deadlock;
 	while (1)
 	{
-		sem_wait(phil->action);
+		sem_wait(action);
+		sem_wait(dead);
 		time = time_msec();
-		if (phil->data->dead || time - phil->lasteat >= phil->data->timer.die)
-		{
-			if (!phil->data->dead)
-				message(phil, " died\n", 0);
-			phil->data->dead++;
-		}
+		if (time - phil->lasteat >= phil->data->timer.die)
+			message(phil, " died\n", 0);
 		else
-			sem_post(phil->action);
+		{
+			sem_post(dead);
+			sem_post(action);
+		}
 		usleep(500);
 	}
 	return (NULL);
@@ -274,19 +288,23 @@ void	*simulate(void *arg)
 	return (NULL);
 }
 
-void	init_philo(t_phil *philosopher, t_data *data, int id)
+int	init_philo(t_phil *philosopher, t_data *data, int id)
 {
 	char	*semname;
 
 	philosopher->data = data;
 	philosopher->id = id + 1;
 	philosopher->meals = 0;
+	philosopher->lasteat = time_msec();
 	semname = get_semname("action", id);
 	if (!semname)
-		return ;
+		return (1);
 	sem_unlink(semname);
-	sem_open(semname, O_CREAT, 666, 1);
+	philosopher->action = sem_open(semname, O_CREAT, 666, 1);
+	if (!philosopher->action)
+		return (1);
 	free(semname);
+	return (0);
 }
 
 int	start_threads(t_data *data, t_phil *philosophers)
@@ -298,7 +316,8 @@ int	start_threads(t_data *data, t_phil *philosophers)
 	data->starttime = time_msec();
 	while (i < data->phil_cnt)
 	{
-		init_philo(&philosophers[i], data, i);
+		if (init_philo(&philosophers[i], data, i))
+			return (1);
 		if (pthread_create(&thread, NULL, simulate, &philosophers[i]))
 			return (1);
 		pthread_detach(thread);
@@ -307,13 +326,12 @@ int	start_threads(t_data *data, t_phil *philosophers)
 		pthread_detach(thread);
 		i++;
 	}
-	return (grimreaper(data));
+	return (weightwatcher(data));
 }
 
 int		main(int argc, char **argv)
 {
 	t_data	*data;
-	t_phil	*philosophers;
 
 	data = malloc(sizeof(t_data));
 	if (!data)
@@ -323,15 +341,12 @@ int		main(int argc, char **argv)
 		return (error(data, ERROR_ARGS));
 	if (init_data(data, (argc == 6), &argv[1]))
 		return (error(data, ERROR_MEM));
-	philosophers = malloc(sizeof(t_phil) * data->phil_cnt);
-	if (!philosophers)
+	data->phil = malloc(sizeof(t_phil) * data->phil_cnt);
+	if (!data->phil)
 		return (error(data, ERROR_MEM));
-	data->phil = philosophers;
-	if (start_threads(data, philosophers))
+	if (start_threads(data, data->phil))
 		return (error(data, ERROR_PTHREAD));
-	sem_unlink("messenger");
-	sem_unlink("forks");
-	free(philosophers);
+	free(data->phil);
 	free(data);
 	return (0);
 }

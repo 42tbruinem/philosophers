@@ -10,7 +10,7 @@
 /*                                                                            */
 /* ************************************************************************** */
 
-#include "philo_one.h"
+#include "philo_three.h"
 #include <stdio.h>
 #include <errno.h>
 #include <semaphore.h>
@@ -76,6 +76,23 @@ size_t	ft_strcpy(char *src, char *dst)
 	return (i);
 }
 
+char	*get_semname(char *basename, unsigned long id)
+{
+	char	*new;
+	size_t	bname_len;
+	size_t	size;
+
+	bname_len = ft_strlen(basename);
+	new = malloc(sizeof(char) * bname_len + 1 + 20);
+	if (!new)
+		return (new);
+	size = ft_strcpy(basename, new);
+	new[size] = ' ';
+	ultoa(new + size + 1, id, &size);
+	new[bname_len + size + 1] = '\0';
+	return (new);
+}
+
 int		ft_atoi(char *number)
 {
 	unsigned int	num;
@@ -98,20 +115,25 @@ int		ft_atoi(char *number)
 
 int		error(t_data *data, char *errmsg)
 {
-	int	i;
-
-	i = 0;
-	while (i < data->phil_cnt)
-	{
-		sem_close(data->phil->action);
-		i++;
-	}
-	sem_close(data->messenger);
-	sem_close(data->forks);
 	free(data->phil);
 	free(data);
 	write(1, errmsg, ft_strlen(errmsg));
 	return (1);
+}
+
+int		parse_data(t_data *data, int eat_minimum)
+{
+	if (data->phil_cnt <= 0 || data->phil_cnt >= 200)
+		return (1);
+	if (eat_minimum && data->eat_minimum <= 0)
+		return (1);
+	if (data->timer.die < 60)
+		return (1);
+	if (data->timer.eat < 60)
+		return (1);
+	if (data->timer.sleep < 60)
+		return (1);
+	return (0);
 }
 
 int		init_data(t_data *data, int eat_minimum, char **argv)
@@ -120,19 +142,36 @@ int		init_data(t_data *data, int eat_minimum, char **argv)
 	data->timer.die = ft_atoi(argv[1]);
 	data->timer.eat = ft_atoi(argv[2]);
 	data->timer.sleep = ft_atoi(argv[3]);
-	sem_unlink("messenger");
-	data->messenger = sem_open("messenger", O_CREAT, 666, 1);
-	sem_unlink("halt");
-	data->halt = sem_open("halt", O_CREAT, 666, 0);
-	if (!data->messenger)
-		exit(1);
 	if (eat_minimum)
 		data->eat_minimum = ft_atoi(argv[4]);
+	if (parse_data(data, eat_minimum))
+		return (1);
+	sem_unlink("messenger");
+	sem_unlink("halt");
+	sem_unlink("forks");
+	sem_unlink("dead");
+	sem_unlink("init");
+	data->mealsreached = malloc(sizeof(sem_t*) * data->phil_cnt);
+	if (!data->mealsreached)
+		return (1);
+	data->init = sem_open("init", O_CREAT, 666, 0);
+	if (!data->init)
+		return (1);
+	data->messenger = sem_open("messenger", O_CREAT, 666, 1);
+	if (!data->messenger)
+		return (1);
+	data->halt = sem_open("halt", O_CREAT, 666, 0);
+	if (!data->halt)
+		return(1);
+	data->deadlock = sem_open("dead", O_CREAT, 666, 1);
+	if (!data->deadlock)
+		return(1);
 	data->pids = malloc(sizeof(int) * data->phil_cnt);
 	if (!data->pids)
-		exit(1);
-	sem_unlink("forks");
+		return(1);
 	data->forks = sem_open("forks", O_CREAT, 666, data->phil_cnt);
+	if (!data->forks)
+		return(1);
 	return (0);
 }
 
@@ -146,7 +185,7 @@ void	write_len(char *str, size_t len)
 	{
 		ret = write(1, str + i, len - i);
 		if (ret == -1)
-			return ;
+			exit(1);
 		i += ret;
 	}
 }
@@ -178,13 +217,14 @@ void	*manager(void *arg)
 	while (1)
 	{
 		sem_wait(phil->action);
-		if (!phil->alreadyreached && phil->data->eat_minimum &&
+		if (!phil->reached && phil->data->eat_minimum &&
 			phil->meals >= phil->data->eat_minimum)
 		{
 			sem_post(phil->mealsreached);
-			phil->alreadyreached = 1;
+			phil->reached = 1;
 		}
 		time = time_msec();
+		sem_wait(phil->data->deadlock);
 		if (time - phil->lasteat >= phil->data->timer.die)
 		{
 			message(phil, " died\n", 0);
@@ -192,7 +232,10 @@ void	*manager(void *arg)
 			exit(0);
 		}
 		else
+		{
 			sem_post(phil->action);
+			sem_post(phil->data->deadlock);
+		}
 		usleep(500);
 	}
 	return (NULL);
@@ -212,23 +255,26 @@ void	get_forks(t_phil *phil, sem_t *forks)
 	message(phil, " is eating\n", 1);
 }
 
+void	update_lasteat(t_phil *phil, unsigned long time)
+{
+	sem_wait(phil->action);
+	phil->meals++;
+	phil->lasteat = time;
+	sem_post(phil->action);
+}
+
 void	simulate(t_phil *phil)
 {
-	unsigned long	lasteat;
 	pthread_t		thread;
 
-	phil->lasteat = time_msec();
+	update_lasteat(phil, time_msec());
 	pthread_create(&thread, NULL, &manager, phil);
 	pthread_detach(thread);
 	while (1)
 	{
 		message(phil, " is thinking\n", 1);
 		get_forks(phil, phil->data->forks);
-		lasteat = time_msec();
-		sem_wait(phil->action);
-		phil->meals++;
-		phil->lasteat = lasteat;
-		sem_post(phil->action);
+		update_lasteat(phil, time_msec());
 		usleep(phil->data->timer.eat * 1000);
 		drop_forks(phil->data->forks);
 		message(phil, " is sleeping\n", 1);
@@ -239,19 +285,34 @@ void	simulate(t_phil *phil)
 
 void	init_philo(t_phil *philosopher, t_data *data)
 {
-	int	i;
+	int		i;
+	char	*semname;
 
 	i = 0;
 	while (i < data->phil_cnt)
 	{
 		philosopher[i].data = data;
 		philosopher[i].id = i + 1;
-		philosopher[i].meals = 0;
-		philosopher[i].alreadyreached = 0;
-		sem_unlink("action");
-		philosopher[i].action = sem_open("action", O_CREAT, 666, 1);
-		sem_unlink("meals");
-		philosopher[i].mealsreached = sem_open("meals", O_CREAT, 666, 0);
+		philosopher[i].meals = -1;
+		philosopher[i].reached = 0;
+		philosopher[i].lasteat = time_msec();
+		semname = get_semname("action", i);
+		if (!semname)
+			exit(1);
+		sem_unlink(semname);
+		philosopher[i].action = sem_open(semname, O_CREAT, 666, 1);
+		if (!philosopher[i].action)
+			exit(1);
+		free(semname);
+		semname = get_semname("meals", i);
+		if (!semname)
+			exit(1);
+		sem_unlink(semname);
+		philosopher[i].mealsreached = sem_open(semname, O_CREAT, 666, 0);
+		if (!philosopher[i].mealsreached)
+			exit(1);
+		data->mealsreached[i] = philosopher[i].mealsreached;
+		free(semname);
 		i++;
 	}
 }
@@ -276,6 +337,9 @@ void	kill_processes(t_data *data)
 	sem_unlink("halt");
 	sem_unlink("messenger");
 	sem_unlink("forks");
+	sem_unlink("dead");
+	sem_wait(data->init);
+	free(data->pids);
 	free(data->phil);
 	free(data);
 	exit(0);
@@ -284,16 +348,23 @@ void	kill_processes(t_data *data)
 void	*mealcounter(void *arg)
 {
 	t_data	*data;
+	sem_t	**mealsreached;
+	sem_t	*halt;
+	int		phil_cnt;
 	int		i;
 
 	i = 0;
 	data = arg;
-	while (i < data->phil_cnt)
+	mealsreached = data->mealsreached;
+	phil_cnt = data->phil_cnt;
+	halt = data->halt;
+	sem_post(data->init);
+	while (i < phil_cnt)
 	{
-		sem_wait(data->phil[i].mealsreached);
+		sem_wait(mealsreached[i]);
 		i++;
 	}
-	kill_processes(data);
+	sem_post(halt);
 	return (NULL);
 }
 
@@ -325,7 +396,6 @@ void	start_processes(t_data *data, t_phil *philosophers)
 int		main(int argc, char **argv)
 {
 	t_data	*data;
-	t_phil	*philosophers;
 
 	data = malloc(sizeof(t_data));
 	if (!data)
@@ -335,10 +405,9 @@ int		main(int argc, char **argv)
 		return (error(data, ERROR_ARGS));
 	if (init_data(data, (argc == 6), &argv[1]))
 		return (error(data, ERROR_MEM));
-	philosophers = malloc(sizeof(t_phil) * data->phil_cnt);
-	if (!philosophers)
+	data->phil = malloc(sizeof(t_phil) * data->phil_cnt);
+	if (!data->phil)
 		return (error(data, ERROR_MEM));
-	data->phil = philosophers;
-	start_processes(data, philosophers);
+	start_processes(data, data->phil);
 	return (0);
 }

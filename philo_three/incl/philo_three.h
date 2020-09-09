@@ -10,8 +10,8 @@
 /*                                                                            */
 /* ************************************************************************** */
 
-#ifndef PHILO_ONE_H
-# define PHILO_ONE_H
+#ifndef PHILO_THREE_H
+# define PHILO_THREE_H
 
 # include <unistd.h>
 # include <semaphore.h>
@@ -20,6 +20,7 @@
 # include <fcntl.h>
 # include <sys/stat.h>
 # include <sys/time.h>
+# include <sys/wait.h>
 # include <stdlib.h>
 
 enum	e_side
@@ -43,7 +44,7 @@ typedef struct	s_phil
 	int				meals;
 	sem_t			*action;
 	sem_t			*mealsreached;
-	int				alreadyreached;
+	int				reached;
 	unsigned long	lasteat;
 	int				id;
 }				t_phil;
@@ -54,10 +55,13 @@ struct			s_data
 	int				*pids;
 	t_phil			*phil;
 	int				dead;
-	sem_t			*halt;
 	int				phil_cnt;
+	sem_t			*halt;
 	sem_t			*forks;
 	sem_t			*messenger;
+	sem_t			*deadlock;
+	sem_t			**mealsreached;
+	sem_t			*init;
 	t_timer			timer;
 	int				eat_minimum;
 };
