@@ -85,13 +85,20 @@ int		error(t_data *data, char *errmsg)
 	int	i;
 
 	i = 0;
+	if (!data)
+		return (1);
 	while (i < data->phil_cnt)
 	{
-		pthread_mutex_destroy(&data->forks[i]);
-		pthread_mutex_destroy(&data->phil->eatlock);
+		if (data->forks_init)
+			pthread_mutex_destroy(&data->forks[i]);
+		if (data->phil && data->phil[i].eatlock_init)
+			pthread_mutex_destroy(&data->phil->eatlock);
 		i++;
 	}
-	pthread_mutex_destroy(&data->messenger);
+	if (data->messenger_init)
+		pthread_mutex_destroy(&data->messenger);
+	if (data->deadlock_init)
+		pthread_mutex_destroy(&data->deadlock);
 	free(data->phil);
 	free(data->forks);
 	free(data);
@@ -114,22 +121,31 @@ int		parse_data(t_data *data, int eat_minimum)
 	return (0);
 }
 
-int		init_data(t_data *data, int eat_minimum, char **argv)
+void	set_settings(t_data *data, char **argv, int eat_minimum)
 {
-	int	i;
-
-	i = 0;
 	data->phil_cnt = ft_atoi(argv[0]);
 	data->timer.die = ft_atoi(argv[1]);
 	data->timer.eat = ft_atoi(argv[2]);
 	data->timer.sleep = ft_atoi(argv[3]);
 	if (eat_minimum)
 		data->eat_minimum = ft_atoi(argv[4]);
+}
+
+int		init_data(t_data *data, int eat_minimum, char **argv)
+{
+	int	i;
+
+	i = 0;
+	set_settings(data, argv, eat_minimum);
 	if (parse_data(data, eat_minimum))
 		return (1);
 	data->dead = 0;
-	pthread_mutex_init(&data->messenger, NULL);
-	pthread_mutex_init(&data->deadlock, NULL);
+	if (pthread_mutex_init(&data->messenger, NULL))
+		return (1);
+	data->messenger_init = 1;
+	if (pthread_mutex_init(&data->deadlock, NULL))
+		return (1);
+	data->deadlock_init = 1;
 	data->forks = malloc(sizeof(pthread_mutex_t) * data->phil_cnt);
 	if (!data->forks)
 		return (1);
@@ -138,6 +154,7 @@ int		init_data(t_data *data, int eat_minimum, char **argv)
 		pthread_mutex_init(&data->forks[i], NULL);
 		i++;
 	}
+	data->forks_init = 1;
 	return (0);
 }
 
@@ -181,13 +198,13 @@ int		grimreaper(t_data *data)
 	while (1)
 	{
 		i = 0;
+		pthread_mutex_lock(&data->deadlock);
+		if (data->dead)
+			return (0);
+		pthread_mutex_unlock(&data->deadlock);
 		while (data->eat_minimum && i < data->phil_cnt)
 		{
 			pthread_mutex_lock(&data->phil[i].eatlock);
-			pthread_mutex_lock(&data->deadlock);
-			if (data->dead)
-				break ;
-			pthread_mutex_unlock(&data->deadlock);
 			if (data->phil[i].meals < data->eat_minimum)
 			{
 				pthread_mutex_unlock(&data->phil[i].eatlock);
@@ -197,7 +214,10 @@ int		grimreaper(t_data *data)
 			i++;
 		}
 		if (i == data->phil_cnt)
+		{
+			pthread_mutex_lock(&data->deadlock);
 			return (0);
+		}
 		usleep(500);
 	}
 	return (0);
@@ -214,11 +234,14 @@ void	*manager(void *arg)
 		pthread_mutex_lock(&phil->eatlock);
 		pthread_mutex_lock(&phil->data->deadlock);
 		time = time_msec();
-		if (phil->data->dead || time - phil->lasteat >= phil->data->timer.die)
+		if (time - phil->lasteat >= phil->data->timer.die)
 		{
 			if (!phil->data->dead)
 				message(phil, " died\n", 0);
 			phil->data->dead++;
+			pthread_mutex_unlock(&phil->eatlock);
+			pthread_mutex_unlock(&phil->data->deadlock);
+			break ;
 		}
 		pthread_mutex_unlock(&phil->eatlock);
 		pthread_mutex_unlock(&phil->data->deadlock);
@@ -302,10 +325,21 @@ int	start_threads(t_data *data, t_phil *philosophers)
 	return (grimreaper(data));
 }
 
+void	safe_init_philo(t_data *data)
+{
+	int	i;
+	
+	i = 0;
+	while (i < data->phil_cnt)
+	{
+		data->phil[i].eatlock_init = 0;
+		i++;
+	}
+}
+
 int		main(int argc, char **argv)
 {
 	t_data	*data;
-	t_phil	*philosophers;
 
 	data = malloc(sizeof(t_data));
 	if (!data)
@@ -315,13 +349,13 @@ int		main(int argc, char **argv)
 		return (error(data, ERROR_ARGS));
 	if (init_data(data, (argc == 6), &argv[1]))
 		return (error(data, ERROR_MEM));
-	philosophers = malloc(sizeof(t_phil) * data->phil_cnt);
-	if (!philosophers)
+	data->phil = malloc(sizeof(t_phil) * data->phil_cnt);
+	if (!data->phil)
 		return (error(data, ERROR_MEM));
-	data->phil = philosophers;
-	if (start_threads(data, philosophers))
+	safe_init_philo(data);
+	if (start_threads(data, data->phil))
 		return (error(data, ERROR_PTHREAD));
-	free(philosophers);
+	free(data->phil);
 	free(data);
 	return (0);
 }

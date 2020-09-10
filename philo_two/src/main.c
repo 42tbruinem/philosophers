@@ -198,6 +198,10 @@ int		weightwatcher(t_data *data)
 
 	while (1)
 	{
+		sem_wait(data->deadlock);
+		if (data->dead)
+			return (0);
+		sem_post(data->deadlock);
 		while (data->eat_minimum && i < data->phil_cnt)
 		{
 			sem_wait(data->phil[i].action);
@@ -235,12 +239,13 @@ void	*manager(void *arg)
 		sem_wait(dead);
 		time = time_msec();
 		if (time - phil->lasteat >= phil->data->timer.die)
-			message(phil, " died\n", 0);
-		else
 		{
-			sem_post(dead);
-			sem_post(action);
+			if (!phil->data->dead)
+				message(phil, " died\n", 0);
+			phil->data->dead++;
 		}
+		sem_post(dead);
+		sem_post(action);
 		usleep(500);
 	}
 	return (NULL);
