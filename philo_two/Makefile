@@ -6,7 +6,7 @@
 #    By: tbruinem <tbruinem@student.codam.nl>         +#+                      #
 #                                                    +#+                       #
 #    Created: 2020/07/15 15:30:15 by tbruinem      #+#    #+#                  #
-#    Updated: 2020/07/15 17:43:09 by tbruinem      ########   odam.nl          #
+#    Updated: 2020/11/04 15:06:39 by tbruinem      ########   odam.nl          #
 #                                                                              #
 # **************************************************************************** #
 
@@ -16,7 +16,13 @@ OBJ_DIR =	obj
 TAIL =		-pthread
 INCL =		-I incl/
 FLAGS =		-Wall -Wextra -Werror
-SRC	=		main.c
+SRC	=		data.c \
+			main.c \
+			message.c \
+			philosopher.c \
+			semaphore.c \
+			threads.c \
+			utils.c
 
 OBJ := $(addprefix $(OBJ_DIR)/, $(SRC:%.c=%.o))
 SRC := $(addprefix $(SRC_DIR)/, $(SRC))

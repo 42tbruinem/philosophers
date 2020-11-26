@@ -1,7 +1,0 @@
-{
-	"files.associations": {
-		"philo_one.h": "c",
-		"signal.h": "c",
-		"semaphore.h": "c"
-	}
-}

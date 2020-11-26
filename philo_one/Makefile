@@ -6,7 +6,7 @@
 #    By: tbruinem <tbruinem@student.codam.nl>         +#+                      #
 #                                                    +#+                       #
 #    Created: 2020/07/15 15:30:15 by tbruinem      #+#    #+#                  #
-#    Updated: 2020/07/15 17:43:09 by tbruinem      ########   odam.nl          #
+#    Updated: 2020/11/04 14:44:54 by tbruinem      ########   odam.nl          #
 #                                                                              #
 # **************************************************************************** #
 
@@ -16,7 +16,14 @@ OBJ_DIR =	obj
 TAIL =		-pthread
 INCL =		-I incl/
 FLAGS =		-Wall -Wextra -Werror
-SRC	=		main.c
+SRC	=		main.c \
+			philosopher.c \
+			data.c \
+			threads.c \
+			mutex_handling.c \
+			utils.c \
+			message.c \
+			status_check.c
 
 OBJ := $(addprefix $(OBJ_DIR)/, $(SRC:%.c=%.o))
 SRC := $(addprefix $(SRC_DIR)/, $(SRC))
@@ -25,6 +32,7 @@ ifeq ($(DEBUG),1)
 FLAGS += -g -fsanitize=address
 endif
 
+#Only viable on linux, on mac this is broken
 ifeq ($(DEBUG),2)
 FLAGS += -g -fsanitize=thread
 endif
